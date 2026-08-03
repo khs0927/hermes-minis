@@ -1,0 +1,15 @@
+#!/bin/bash
+# Unified Hermes CLI: natural-language Korean requests use subagent orchestration.
+export HERMES_HOME="/root/.hermes"
+export NVIDIA_API_KEY="${NVIDIA_API_KEY}"
+export AEROLINK_API_KEY="${AEROLINK_API_KEY}"
+export PATH="/root/.hermes/bin:$PATH"
+
+case "${1:-}" in
+  --roles|--list-models)
+    exec python3 /root/.hermes/hermes_run.py "$@"
+    ;;
+  *)
+    exec python3 /root/.hermes/hermes_orchestrator.py "$@"
+    ;;
+esac

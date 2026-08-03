@@ -1,0 +1,5 @@
+#!/bin/bash
+# Hermes MCP Server v3 - natural-language multi-worker orchestration.
+export HERMES_HOME="/root/.hermes"
+export NVIDIA_API_KEY="${NVIDIA_API_KEY}"
+exec python3 /root/.hermes/hermes_orchestrator_mcp.py "$@"

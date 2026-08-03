@@ -1,0 +1,27 @@
+#!/bin/sh
+set -eu
+HERMES_HOME=${HERMES_HOME:-/root/.hermes}
+export HERMES_HOME
+export PATH="/root/.hermes/bin:/root/.hermes/.venv/bin:$PATH"
+LOG_DIR="$HERMES_HOME/logs"
+PID_FILE="$HERMES_HOME/hermes-minis-dashboard.pid"
+mkdir -p "$LOG_DIR"
+find_pid() { [ -f "$PID_FILE" ] && cat "$PID_FILE" || true; }
+is_running() { p=$(find_pid); [ -n "$p" ] && kill -0 "$p" 2>/dev/null; }
+case "${1:-status}" in
+ start)
+  if is_running; then echo "already running pid=$(find_pid)"; exit 0; fi
+  setsid sh -c '/root/.hermes/.venv/bin/python -m hermes_cli.main dashboard --host 127.0.0.1 --port 9119 --no-open >"$LOG_DIR/hermes-minis-dashboard.log" 2>&1 < /dev/null & echo $! >"$PID_FILE"' &
+  sleep 2
+  if is_running; then echo "started pid=$(find_pid) url=http://127.0.0.1:9119"; else echo "failed to start; check $LOG_DIR/hermes-minis-dashboard.log"; fi
+  ;;
+ stop)
+  if is_running; then kill "$(find_pid)" 2>/dev/null || true; echo stopped; else echo already-stopped; fi
+  rm -f "$PID_FILE"
+  ;;
+ status)
+  if is_running; then echo "dashboard=running pid=$(find_pid) url=http://127.0.0.1:9119"; else echo dashboard=stopped; fi
+  ;;
+ logs) tail -120 "$LOG_DIR/hermes-minis-dashboard.log" 2>/dev/null || echo no-log ;;
+ *) echo "usage: hermes-dashboard {start|stop|status|logs}"; exit 2;;
+esac

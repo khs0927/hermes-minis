@@ -1,0 +1,23 @@
+#!/bin/bash
+# Unified Hermes entrypoint for Korean natural-language orchestration.
+export HERMES_HOME="/root/.hermes"
+export NVIDIA_API_KEY="${NVIDIA_API_KEY}"
+export AEROLINK_API_KEY="${AEROLINK_API_KEY}"
+export PATH="/root/.hermes/bin:$PATH"
+
+# Explicit Minis Complete Agent control plane. It compiles missions and
+# evidence gates before any outer native/browser/MCP side effect is dispatched.
+if [ "${1:-}" = "complete" ] || [ "${1:-}" = "mission" ] || [ "${1:-}" = "orchestrate" ]; then
+  shift
+  exec python3 /var/minis/workspace/minis-complete-agent/orchestrator.py plan "$*" --save
+fi
+
+case "${1:-}" in
+  chat|model|gateway|setup|doctor|mcp|skills|update|version|--help|-h|--version)
+    . /root/.hermes/.venv/bin/activate && exec python -m hermes_cli.main "$@"
+    ;;
+  *)
+    # Every ordinary prompt uses the Korean-aware subagent orchestrator.
+    exec python3 /root/.hermes/hermes_orchestrator.py "$@"
+    ;;
+esac

@@ -1,0 +1,4 @@
+#!/bin/bash
+# Hermes AeroLink Backend Runner
+export AEROLINK_API_KEY="${AEROLINK_API_KEY}"
+exec python3 /root/.hermes/aerolink_runner.py "$@"

@@ -1,0 +1,27 @@
+model:
+  provider: nvidia
+  default: nvidia/nemotron-3-super-120b-a12b
+nvidia:
+  api_key_env: NVIDIA_API_KEY
+  base_url: https://integrate.api.nvidia.com/v1
+minis-fast:
+  port: 8642
+  model: openai/gpt-oss-120b
+minis-expert:
+  port: 8643
+  model: z-ai/glm-5.2
+minis-code:
+  port: 8644
+  model: deepseek-ai/deepseek-v4-flash
+skills:
+  external_dirs:
+  - /var/minis/skills
+  template_vars: true
+  inline_shell: false
+mcp_servers:
+  khs0927:
+    url: https://mcp.smithery.run/khs0927
+    headers:
+      Authorization: Bearer $$SMITHERY_API_KEY
+  googledrive:
+    url: https://www.googleapis.com/drive/v3

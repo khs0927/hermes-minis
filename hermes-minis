@@ -1,0 +1,52 @@
+#!/bin/sh
+set -eu
+HERMES_HOME=${HERMES_HOME:-/root/.hermes}
+export HERMES_HOME
+export PATH="/root/.hermes/bin:/root/.hermes/.venv/bin:$PATH"
+LOG_DIR="$HERMES_HOME/logs"
+PID_FILE="$HERMES_HOME/hermes-minis-gateway.pid"
+LAUNCHER="$HERMES_HOME/minis-start-gateway.sh"
+mkdir -p "$LOG_DIR"
+usage() { echo "usage: hermes-minis {status|start|stop|restart|logs|configure-telegram|check}"; }
+find_pid() { [ -f "$PID_FILE" ] && cat "$PID_FILE" || true; }
+is_running() { p=$(find_pid); [ -n "$p" ] && kill -0 "$p" 2>/dev/null; }
+case "${1:-status}" in
+ status)
+  if is_running; then echo "gateway=running pid=$(find_pid)"; else echo "gateway=stopped"; fi
+  echo "hermes_home=$HERMES_HOME"
+  for v in TELEGRAM_BOT_TOKEN TELEGRAM_ALLOWED_USERS NVIDIA_API_KEY OPENAI_API_KEY; do
+   if grep -q "^${v}=" "$HERMES_HOME/.env" 2>/dev/null; then
+    echo "$v=configured"
+   else
+    eval "[ -n \"\${$v:-}\" ]" && echo "$v=configured" || echo "$v=not-configured"
+   fi
+  done
+  ;;
+ check)
+  python3 - <<'PY'
+import os,sys
+print('python=ok',sys.version.split()[0])
+for p in ['/root/.hermes/hermes-agent','/root/.hermes/config.yaml','/root/.hermes/.env']:
+ print(p, 'present' if os.path.exists(p) else 'missing')
+PY
+  command -v curl >/dev/null && echo curl=ok || echo curl=missing
+  ;;
+ start)
+  if is_running; then echo "already running pid=$(find_pid)"; exit 0; fi
+  : > "$LOG_DIR/hermes-minis-gateway.log"
+  # iSH-safe: detached launcher script in a subshell background
+  ( "$LAUNCHER" & )
+  sleep 3
+  p=$(pgrep -f 'hermes_cli.main gateway' | head -1)
+  if [ -n "$p" ]; then echo "$p" > "$PID_FILE"; echo "started pid=$p"; else echo "failed to start; check $LOG_DIR/hermes-minis-gateway.log"; fi
+  ;;
+ stop)
+  if is_running; then kill "$(find_pid)" 2>/dev/null || true; rm -f "$PID_FILE"; echo stopped; else rm -f "$PID_FILE"; echo already-stopped; fi
+  ;;
+ restart) "$0" stop; sleep 1; "$0" start ;;
+ logs) tail -120 "$LOG_DIR/hermes-minis-gateway.log" 2>/dev/null || echo no-log ;;
+ configure-telegram)
+  exec /root/.hermes/.venv/bin/python -m hermes_cli.main gateway setup
+  ;;
+ *) usage; exit 2;;
+esac
