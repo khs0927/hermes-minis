@@ -247,7 +247,7 @@ export default defineChannel({
             attributes: {
               requestedModel: body.model || MODEL_ID,
               client: "OpenMinis",
-              toolsEnabled,
+              toolsEnabled: toolsEnabled ? "true" : "false",
             },
           },
           turnPolicy: "queue",
