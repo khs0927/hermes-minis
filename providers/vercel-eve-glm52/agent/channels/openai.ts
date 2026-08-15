@@ -17,6 +17,7 @@ import {
   type ChatCompletionsRequest,
   validateModel,
 } from "../lib/openai-compat";
+import { minisSetupPage } from "../lib/minis-setup-page";
 
 type EventView = {
   type: string;
@@ -191,6 +192,30 @@ function streamAsOpenAI(
 
 export default defineChannel({
   routes: [
+    GET("/setup", async (request) => {
+      return new Response(minisSetupPage(request.url), {
+        status: 200,
+        headers: {
+          "content-type": "text/html; charset=utf-8",
+          "cache-control": "no-store",
+          "content-security-policy": [
+            "default-src 'self'",
+            "script-src 'unsafe-inline'",
+            "style-src 'unsafe-inline'",
+            "connect-src 'self'",
+            "img-src 'self' data:",
+            "object-src 'none'",
+            "base-uri 'none'",
+            "frame-ancestors 'none'",
+            "form-action 'none'",
+          ].join("; "),
+          "referrer-policy": "no-referrer",
+          "x-content-type-options": "nosniff",
+          "x-frame-options": "DENY",
+        },
+      });
+    }),
+
     GET("/health", async (request) => {
       const denied = authorize(request);
       if (denied) return denied;
@@ -202,6 +227,7 @@ export default defineChannel({
         runtime: "eve",
         chatCompletions: true,
         minisToolCalls: true,
+        setupPage: "/setup",
         promoWindowOpen: promoWindowOpen(),
         promoEndAt: promoEndAt().toISOString(),
         paidUseAllowed: paidUseAllowed(),
