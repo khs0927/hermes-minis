@@ -3,6 +3,7 @@ name: minis-eve-glm52-provider
 on:
   push:
     branches:
+      - main
       - feature/minis-eve-glm52-provider
     paths:
       - "providers/vercel-eve-glm52/**"
