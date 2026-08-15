@@ -10,8 +10,10 @@ import {
   completionEnvelope,
   openAIError,
   paidUseAllowed,
+  parseAssistantOutput,
   promoEndAt,
   promoWindowOpen,
+  toolCompletionEnvelope,
   type ChatCompletionsRequest,
   validateModel,
 } from "../lib/openai-compat";
@@ -99,13 +101,15 @@ async function collectFinalText(stream: ReadableStream<MessageStreamEvent>): Pro
 function streamAsOpenAI(
   stream: ReadableStream<MessageStreamEvent>,
   completionId: string,
+  toolsEnabled: boolean,
 ): ReadableStream<Uint8Array> {
   const encoder = new TextEncoder();
 
   return new ReadableStream<Uint8Array>({
     async start(controller) {
       let emittedText = false;
-      let finalText = "";
+      let appended = "";
+      let completed = "";
 
       const push = (payload: unknown) => {
         controller.enqueue(encoder.encode(`data: ${JSON.stringify(payload)}\n\n`));
@@ -118,14 +122,17 @@ function streamAsOpenAI(
           const view = eventView(event);
           if (view.type === "message.appended") {
             const delta = eventText(event, "messageDelta");
-            if (delta) {
+            appended += delta;
+            // When tools are available we buffer the model output so the internal
+            // sentinel protocol can never leak into the Minis chat UI.
+            if (!toolsEnabled && delta) {
               emittedText = true;
               push(chunkEnvelope(completionId, { content: delta }));
             }
           }
 
           if (view.type === "message.completed" && view.data?.finishReason !== "tool-calls") {
-            finalText = eventText(event, "message");
+            completed = eventText(event, "message");
           }
 
           if (view.type === "session.failed") {
@@ -135,10 +142,39 @@ function streamAsOpenAI(
           if (view.type === "session.waiting" || view.type === "session.completed") break;
         }
 
-        if (!emittedText && finalText) {
-          push(chunkEnvelope(completionId, { content: finalText }));
+        const finalText = completed || appended;
+        if (toolsEnabled) {
+          const parsed = parseAssistantOutput(finalText, true);
+          if (parsed.kind === "tool_calls") {
+            for (const [index, toolCall] of parsed.toolCalls.entries()) {
+              push(
+                chunkEnvelope(completionId, {
+                  tool_calls: [
+                    {
+                      index,
+                      id: toolCall.id,
+                      type: "function",
+                      function: {
+                        name: toolCall.function.name,
+                        arguments: toolCall.function.arguments,
+                      },
+                    },
+                  ],
+                }),
+              );
+            }
+            push(chunkEnvelope(completionId, {}, "tool_calls"));
+          } else {
+            if (parsed.text) push(chunkEnvelope(completionId, { content: parsed.text }));
+            push(chunkEnvelope(completionId, {}, "stop"));
+          }
+        } else {
+          if (!emittedText && finalText) {
+            push(chunkEnvelope(completionId, { content: finalText }));
+          }
+          push(chunkEnvelope(completionId, {}, "stop"));
         }
-        push(chunkEnvelope(completionId, {}, "stop"));
+
         controller.enqueue(encoder.encode("data: [DONE]\n\n"));
         controller.close();
       } catch (error) {
@@ -164,6 +200,8 @@ export default defineChannel({
         service: "minis-eve-glm52-provider",
         model: MODEL_ID,
         runtime: "eve",
+        chatCompletions: true,
+        minisToolCalls: true,
         promoWindowOpen: promoWindowOpen(),
         promoEndAt: promoEndAt().toISOString(),
         paidUseAllowed: paidUseAllowed(),
@@ -196,7 +234,9 @@ export default defineChannel({
         const body = (await request.json()) as ChatCompletionsRequest;
         validateModel(body.model);
         const messages = Array.isArray(body.messages) ? body.messages : [];
-        const prompt = buildEvePrompt(messages);
+        const tools = Array.isArray(body.tools) ? body.tools : [];
+        const toolsEnabled = tools.length > 0 && body.tool_choice !== "none";
+        const prompt = buildEvePrompt(messages, tools, body.tool_choice);
 
         const sessionAddress = `openai-${randomUUID()}`;
         const session = await from(sessionAddress).send(prompt, {
@@ -207,6 +247,7 @@ export default defineChannel({
             attributes: {
               requestedModel: body.model || MODEL_ID,
               client: "OpenMinis",
+              toolsEnabled,
             },
           },
           turnPolicy: "queue",
@@ -216,20 +257,30 @@ export default defineChannel({
         const completionId = `chatcmpl_${randomUUID().replaceAll("-", "")}`;
 
         if (body.stream) {
-          return new Response(streamAsOpenAI(eveStream, completionId), {
+          return new Response(streamAsOpenAI(eveStream, completionId, toolsEnabled), {
             status: 200,
             headers: {
               "content-type": "text/event-stream; charset=utf-8",
               "cache-control": "no-cache, no-transform",
               connection: "keep-alive",
               "x-eve-model": MODEL_ID,
+              "x-minis-tool-bridge": toolsEnabled ? "prompt-protocol" : "off",
             },
           });
         }
 
         const text = await collectFinalText(eveStream);
-        return Response.json(completionEnvelope(completionId, text), {
-          headers: { "x-eve-model": MODEL_ID },
+        const parsed = parseAssistantOutput(text, toolsEnabled);
+        const responseBody =
+          parsed.kind === "tool_calls"
+            ? toolCompletionEnvelope(completionId, parsed.toolCalls)
+            : completionEnvelope(completionId, parsed.text);
+
+        return Response.json(responseBody, {
+          headers: {
+            "x-eve-model": MODEL_ID,
+            "x-minis-tool-bridge": toolsEnabled ? "prompt-protocol" : "off",
+          },
         });
       } catch (error) {
         const message = error instanceof Error ? error.message : "Unknown error";
