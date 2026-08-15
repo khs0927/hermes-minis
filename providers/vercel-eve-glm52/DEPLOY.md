@@ -1,0 +1,82 @@
+# One-click Vercel deployment for OpenMinis GLM-5.2
+
+The bridge is already isolated under `providers/vercel-eve-glm52` and can be deployed as its own Vercel project.
+
+## 1. Open the one-click import
+
+[Deploy/import `minis-eve-glm52` on Vercel](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2Fkhs0927%2Fhermes-minis%2Ftree%2Ffeature%2Fminis-eve-glm52-provider%2Fproviders%2Fvercel-eve-glm52&project-name=minis-eve-glm52)
+
+The source points directly at the feature branch and the `providers/vercel-eve-glm52` subdirectory, so no monorepo Root Directory editing should be necessary in the clone/import flow.
+
+If Vercel offers to create a new Git repository from the source, use a name such as `minis-eve-glm52-provider`. This is optional for deployment; the current source also works from `khs0927/hermes-minis`.
+
+## 2. Add only the bridge secret
+
+Create this encrypted Vercel environment variable for Production and Preview:
+
+```text
+MINIS_BRIDGE_API_KEY=<a-long-random-secret-known-only-to-your-Minis-client>
+```
+
+Keep these defaults unless you intentionally change the billing behavior:
+
+```text
+PROMO_END_AT=2026-08-28T00:00:00.000Z
+ALLOW_PAID_AFTER_PROMO=false
+```
+
+For a Vercel-hosted Eve deployment, the official Eve deployment guide says a string model ID such as `zai/glm-5.2` authenticates to Vercel AI Gateway through the Vercel project's OIDC identity. Therefore `AI_GATEWAY_API_KEY` is normally **not required on Vercel**. It is for local/self-hosted development when project OIDC is unavailable.
+
+Do not put any Vercel AI Gateway credential into OpenMinis.
+
+## 3. Deploy and smoke-test before real use
+
+After Vercel finishes the production deployment, test:
+
+```bash
+curl https://YOUR-PROJECT.vercel.app/health \
+  -H "Authorization: Bearer YOUR_MINIS_BRIDGE_API_KEY"
+```
+
+Expected properties include:
+
+```json
+{
+  "ok": true,
+  "runtime": "eve",
+  "model": "zai/glm-5.2",
+  "chatCompletions": true,
+  "minisToolCalls": true,
+  "paidUseAllowed": false
+}
+```
+
+Then send **one tiny** chat request. Before increasing usage, inspect Vercel AI Gateway Observability/Usage and confirm that this Eve/GLM-5.2 request is actually billed at **$0** under the August promotion. The repository guard stops requests after the configured promotion boundary, but it cannot independently prove Vercel billing eligibility.
+
+## 4. Add it to OpenMinis
+
+Use exactly this provider type:
+
+```text
+Settings → Providers → Add Provider → OpenAI
+Credential: API Key
+Name: Vercel Eve GLM-5.2
+Custom Base URL: https://YOUR-PROJECT.vercel.app
+Append /v1: ON
+API Key: YOUR_MINIS_BRIDGE_API_KEY
+Model: zai/glm-5.2
+```
+
+Do **not** choose `Responses API (v3)`. Current OpenMinis source uses `/v1/chat/completions` for an API-key OpenAI provider with a custom base URL, which is the endpoint this bridge implements.
+
+After saving, fetch/refresh models. `/v1/models` intentionally exposes only `zai/glm-5.2`.
+
+## 5. Test Minis Skills / MCP
+
+The bridge accepts the OpenAI `tools` array produced by OpenMinis. Tool choice is adapted inside the real Eve turn and translated back into standard OpenAI `tool_calls`; OpenMinis remains the executor and permission boundary for Skills/MCP actions.
+
+Start with a read-only tool. Confirm that the model requests a tool, Minis executes it, and the next `role: tool` result is consumed correctly before enabling any tool with destructive side effects.
+
+## Stop-spend behavior
+
+The bridge is intentionally locked to `zai/glm-5.2` and refuses inference after the configured promotion window when `ALLOW_PAID_AFTER_PROMO=false`. To continue after the promotion, first replace the model/routing strategy with a verified free model or explicitly opt into paid usage; do not simply flip the flag accidentally.
