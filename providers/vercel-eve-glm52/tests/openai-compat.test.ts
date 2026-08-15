@@ -2,10 +2,14 @@ import { afterEach, describe, expect, it } from "vitest";
 
 import {
   MODEL_ID,
+  TOOL_SENTINEL_CLOSE,
+  TOOL_SENTINEL_OPEN,
   assertSafeToRun,
   buildEvePrompt,
   completionEnvelope,
   messageText,
+  parseAssistantOutput,
+  toolCompletionEnvelope,
   validateModel,
 } from "../agent/lib/openai-compat";
 
@@ -58,10 +62,71 @@ describe("OpenAI compatibility", () => {
     expect(prompt).toContain("USER:\n2+2?");
   });
 
+  it("adds Minis tool schemas without treating them as higher-priority instructions", () => {
+    const prompt = buildEvePrompt(
+      [{ role: "user", content: "What is the weather?" }],
+      [
+        {
+          type: "function",
+          function: {
+            name: "get_weather",
+            description: "Return current weather",
+            parameters: { type: "object", properties: { city: { type: "string" } }, required: ["city"] },
+          },
+        },
+      ],
+      "auto",
+    );
+    expect(prompt).toContain("AVAILABLE_TOOLS=");
+    expect(prompt).toContain("get_weather");
+    expect(prompt).toContain(TOOL_SENTINEL_OPEN);
+  });
+
+  it("preserves prior assistant tool calls and tool results in transcript context", () => {
+    const prompt = buildEvePrompt([
+      {
+        role: "assistant",
+        content: null,
+        tool_calls: [
+          { id: "call_1", type: "function", function: { name: "lookup", arguments: "{\"q\":\"x\"}" } },
+        ],
+      },
+      { role: "tool", tool_call_id: "call_1", content: "result-x" },
+    ]);
+    expect(prompt).toContain("TOOL_CALLS:");
+    expect(prompt).toContain("lookup");
+    expect(prompt).toContain("TOOL [tool_call_id=call_1]:\nresult-x");
+  });
+
+  it("parses the sentinel tool protocol into standard OpenAI tool calls", () => {
+    const raw = `${TOOL_SENTINEL_OPEN}{"tool_calls":[{"name":"get_weather","arguments":{"city":"Busan"}}]}${TOOL_SENTINEL_CLOSE}`;
+    const parsed = parseAssistantOutput(raw, true);
+    expect(parsed.kind).toBe("tool_calls");
+    if (parsed.kind !== "tool_calls") throw new Error("expected tool calls");
+    expect(parsed.toolCalls[0]?.function.name).toBe("get_weather");
+    expect(JSON.parse(parsed.toolCalls[0]?.function.arguments ?? "{}")).toEqual({ city: "Busan" });
+  });
+
+  it("does not interpret tool-call text when client tool use is disabled", () => {
+    const raw = `${TOOL_SENTINEL_OPEN}{"tool_calls":[{"name":"x","arguments":{}}]}${TOOL_SENTINEL_CLOSE}`;
+    expect(parseAssistantOutput(raw, false)).toEqual({ kind: "text", text: raw });
+  });
+
   it("returns an OpenAI-style completion envelope", () => {
     const response = completionEnvelope("chatcmpl_test", "four", 123);
     expect(response.model).toBe(MODEL_ID);
     expect(response.choices[0]?.message.content).toBe("four");
     expect(response.choices[0]?.finish_reason).toBe("stop");
+  });
+
+  it("returns an OpenAI-style tool-call envelope", () => {
+    const parsed = parseAssistantOutput(
+      `${TOOL_SENTINEL_OPEN}{"tool_calls":[{"name":"lookup","arguments":{"q":"abc"}}]}${TOOL_SENTINEL_CLOSE}`,
+      true,
+    );
+    if (parsed.kind !== "tool_calls") throw new Error("expected tool calls");
+    const response = toolCompletionEnvelope("chatcmpl_tool", parsed.toolCalls, 123);
+    expect(response.choices[0]?.finish_reason).toBe("tool_calls");
+    expect(response.choices[0]?.message.tool_calls[0]?.function.name).toBe("lookup");
   });
 });
