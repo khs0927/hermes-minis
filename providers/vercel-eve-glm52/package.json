@@ -15,8 +15,8 @@
   },
   "dependencies": {
     "@vercel/connect": "0.4.3",
-    "ai": "^7.0.58",
-    "eve": "^0.38.3",
+    "ai": "7.0.58",
+    "eve": "0.38.3",
     "zod": "4.4.3"
   },
   "devDependencies": {
