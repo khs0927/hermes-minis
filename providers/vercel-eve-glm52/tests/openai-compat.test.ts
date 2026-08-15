@@ -12,6 +12,7 @@ import {
   toolCompletionEnvelope,
   validateModel,
 } from "../agent/lib/openai-compat";
+import { minisSetupPage } from "../agent/lib/minis-setup-page";
 
 const originalPromoEnd = process.env.PROMO_END_AT;
 const originalAllowPaid = process.env.ALLOW_PAID_AFTER_PROMO;
@@ -128,5 +129,22 @@ describe("OpenAI compatibility", () => {
     const response = toolCompletionEnvelope("chatcmpl_tool", parsed.toolCalls, 123);
     expect(response.choices[0]?.finish_reason).toBe("tool_calls");
     expect(response.choices[0]?.message.tool_calls[0]?.function.name).toBe("lookup");
+  });
+});
+
+describe("mobile Minis setup page", () => {
+  it("binds the provider template to the deployment origin and OpenAI protocol", () => {
+    const html = minisSetupPage("https://minis-eve.example.com/setup?x=1");
+    expect(html).toContain("https://minis-eve.example.com");
+    expect(html).toContain("providerType: 'openAI'");
+    expect(html).toContain("appendV1Suffix: true");
+    expect(html).toContain(MODEL_ID);
+    expect(html).toContain("Or Import Provider from File");
+  });
+
+  it("does not embed a configured bridge secret in the generated HTML", () => {
+    process.env.MINIS_BRIDGE_API_KEY = "server-secret-that-must-not-appear";
+    const html = minisSetupPage("https://minis-eve.example.com/setup");
+    expect(html).not.toContain("server-secret-that-must-not-appear");
   });
 });
