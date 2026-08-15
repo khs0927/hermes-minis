@@ -4,11 +4,11 @@ The bridge is already isolated under `providers/vercel-eve-glm52` and can be dep
 
 ## 1. Open the one-click import
 
-[Deploy/import `minis-eve-glm52` on Vercel](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2Fkhs0927%2Fhermes-minis%2Ftree%2Ffeature%2Fminis-eve-glm52-provider%2Fproviders%2Fvercel-eve-glm52&project-name=minis-eve-glm52)
+[Deploy/import `minis-eve-glm52` on Vercel](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2Fkhs0927%2Fhermes-minis%2Ftree%2Ffeature%2Fminis-eve-glm52-provider%2Fproviders%2Fvercel-eve-glm52&project-name=minis-eve-glm52&repository-name=minis-eve-glm52-provider)
 
-The source points directly at the feature branch and the `providers/vercel-eve-glm52` subdirectory, so no monorepo Root Directory editing should be necessary in the clone/import flow.
+The source points directly at the feature branch and the `providers/vercel-eve-glm52` subdirectory, so no monorepo Root Directory editing should be necessary in the clone/import flow. The Deploy Button also pre-fills `minis-eve-glm52-provider` as the new Git repository name when Vercel offers the Git clone/create step.
 
-If Vercel offers to create a new Git repository from the source, use a name such as `minis-eve-glm52-provider`. This is optional for deployment; the current source also works from `khs0927/hermes-minis`.
+If your Vercel account chooses to deploy from the existing source instead of creating a new Git repository, that is also valid; the runtime package is self-contained inside `khs0927/hermes-minis`.
 
 ## 2. Add only the bridge secret
 
