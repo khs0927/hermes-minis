@@ -1,4 +1,5 @@
 import { randomUUID, timingSafeEqual } from "node:crypto";
+import type { MessageStreamEvent } from "eve/client";
 import { defineChannel, GET, POST } from "eve/channels";
 
 import {
@@ -15,10 +16,14 @@ import {
   validateModel,
 } from "../lib/openai-compat";
 
-type EveStreamEvent = {
-  type?: string;
+type EventView = {
+  type: string;
   data?: Record<string, unknown>;
 };
+
+function eventView(event: MessageStreamEvent): EventView {
+  return event as unknown as EventView;
+}
 
 function bearerToken(request: Request): string | null {
   const header = request.headers.get("authorization") ?? "";
@@ -51,70 +56,50 @@ function authorize(request: Request): Response | null {
   return null;
 }
 
-async function* decodeNdjson(stream: ReadableStream<Uint8Array>): AsyncGenerator<EveStreamEvent> {
+async function* readEvents(stream: ReadableStream<MessageStreamEvent>): AsyncGenerator<MessageStreamEvent> {
   const reader = stream.getReader();
-  const decoder = new TextDecoder();
-  let buffer = "";
-
   try {
     while (true) {
       const { value, done } = await reader.read();
       if (done) break;
-      buffer += decoder.decode(value, { stream: true });
-
-      while (true) {
-        const newline = buffer.indexOf("\n");
-        if (newline < 0) break;
-        const line = buffer.slice(0, newline).trim();
-        buffer = buffer.slice(newline + 1);
-        if (!line) continue;
-        try {
-          yield JSON.parse(line) as EveStreamEvent;
-        } catch {
-          // Ignore malformed/non-event lines rather than corrupting the client stream.
-        }
-      }
-    }
-
-    const tail = `${buffer}${decoder.decode()}`.trim();
-    if (tail) {
-      try {
-        yield JSON.parse(tail) as EveStreamEvent;
-      } catch {
-        // Ignore trailing non-JSON text.
-      }
+      yield value;
     }
   } finally {
     reader.releaseLock();
   }
 }
 
-function eventText(event: EveStreamEvent, key: "messageDelta" | "message"): string {
-  const value = event.data?.[key];
+function eventText(event: MessageStreamEvent, key: "messageDelta" | "message"): string {
+  const value = eventView(event).data?.[key];
   return typeof value === "string" ? value : "";
 }
 
-async function collectFinalText(stream: ReadableStream<Uint8Array>): Promise<string> {
+async function collectFinalText(stream: ReadableStream<MessageStreamEvent>): Promise<string> {
   let appended = "";
   let completed = "";
 
-  for await (const event of decodeNdjson(stream)) {
-    if (event.type === "message.appended") appended += eventText(event, "messageDelta");
-    if (event.type === "message.completed") {
-      const finishReason = event.data?.finishReason;
+  for await (const event of readEvents(stream)) {
+    const view = eventView(event);
+    if (view.type === "message.appended") appended += eventText(event, "messageDelta");
+    if (view.type === "message.completed") {
+      const finishReason = view.data?.finishReason;
       if (finishReason !== "tool-calls") completed = eventText(event, "message");
     }
-    if (event.type === "session.failed") {
-      const reason = typeof event.data?.error === "string" ? event.data.error : "Eve session failed";
+    if (view.type === "session.failed") {
+      const error = view.data?.error;
+      const reason = typeof error === "string" ? error : "Eve session failed";
       throw new Error(reason);
     }
-    if (event.type === "session.waiting" || event.type === "session.completed") break;
+    if (view.type === "session.waiting" || view.type === "session.completed") break;
   }
 
   return completed || appended;
 }
 
-function streamAsOpenAI(stream: ReadableStream<Uint8Array>, completionId: string): ReadableStream<Uint8Array> {
+function streamAsOpenAI(
+  stream: ReadableStream<MessageStreamEvent>,
+  completionId: string,
+): ReadableStream<Uint8Array> {
   const encoder = new TextEncoder();
 
   return new ReadableStream<Uint8Array>({
@@ -129,8 +114,9 @@ function streamAsOpenAI(stream: ReadableStream<Uint8Array>, completionId: string
       try {
         push(chunkEnvelope(completionId, { role: "assistant" }));
 
-        for await (const event of decodeNdjson(stream)) {
-          if (event.type === "message.appended") {
+        for await (const event of readEvents(stream)) {
+          const view = eventView(event);
+          if (view.type === "message.appended") {
             const delta = eventText(event, "messageDelta");
             if (delta) {
               emittedText = true;
@@ -138,15 +124,15 @@ function streamAsOpenAI(stream: ReadableStream<Uint8Array>, completionId: string
             }
           }
 
-          if (event.type === "message.completed" && event.data?.finishReason !== "tool-calls") {
+          if (view.type === "message.completed" && view.data?.finishReason !== "tool-calls") {
             finalText = eventText(event, "message");
           }
 
-          if (event.type === "session.failed") {
+          if (view.type === "session.failed") {
             throw new Error("Eve session failed while streaming");
           }
 
-          if (event.type === "session.waiting" || event.type === "session.completed") break;
+          if (view.type === "session.waiting" || view.type === "session.completed") break;
         }
 
         if (!emittedText && finalText) {
@@ -226,7 +212,7 @@ export default defineChannel({
           turnPolicy: "queue",
         });
 
-        const eveStream = (await session.getEventStream()) as ReadableStream<Uint8Array>;
+        const eveStream = await session.getEventStream();
         const completionId = `chatcmpl_${randomUUID().replaceAll("-", "")}`;
 
         if (body.stream) {
