@@ -1,0 +1,38 @@
+name: minis-eve-glm52-provider
+
+on:
+  push:
+    branches:
+      - feature/minis-eve-glm52-provider
+    paths:
+      - "providers/vercel-eve-glm52/**"
+      - ".github/workflows/minis-eve-glm52-provider.yml"
+  pull_request:
+    paths:
+      - "providers/vercel-eve-glm52/**"
+      - ".github/workflows/minis-eve-glm52-provider.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: providers/vercel-eve-glm52
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: providers/vercel-eve-glm52/package.json
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+      - name: Typecheck
+        run: npm run typecheck
+      - name: Unit tests
+        run: npm test
+      - name: Eve build
+        run: npm run build
