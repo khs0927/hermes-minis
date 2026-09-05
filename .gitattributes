@@ -1,0 +1,8 @@
+# CLI 스크립트는 항상 LF (CRLF 혼입 시 bash -n 실패)
+*.sh text eol=lf
+/hermes text eol=lf
+/hermes-ai text eol=lf
+/hermes-aerolink text eol=lf
+/hermes-dashboard text eol=lf
+/hermes-mcp text eol=lf
+/hermes-minis text eol=lf

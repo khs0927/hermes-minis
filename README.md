@@ -104,11 +104,11 @@ Requests are automatically routed through 5 specialized workers:
 ## VPS Deployment (optional)
 
 ```bash
-# Bootstrap script for Ubuntu VPS
-bash /var/minis/shared/hermes-minis/vps_bootstrap.sh
+# Bootstrap script for Ubuntu VPS (root)
+bash scripts/vps_bootstrap.sh
 ```
 
-The VPS bootstrap copies the Minis Hermes environment to a remote server for 24/7 uptime.
+The VPS bootstrap copies this repo to `/var/minis/shared/hermes-minis/repo`, installs the CLI files to `/root/.hermes/bin`, and registers a systemd unit for 24/7 uptime. Without a Telegram token it provisions only and prints the start steps.
 
 ## File Map
 

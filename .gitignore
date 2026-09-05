@@ -1,0 +1,12 @@
+# 시크릿 (커밋 절대 금지)
+.env
+
+# 로그·런타임
+*.log
+*.pid
+
+# Node (providers/)
+node_modules/
+
+# OS
+.DS_Store
